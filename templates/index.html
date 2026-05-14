@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Vuln Scanner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+        <h1 class="text-3xl font-bold text-gray-800 mb-2">Network Recon Dashboard</h1>
+        <p class="text-gray-500 mb-6 text-sm">Asynchronous Nmap Scanner powered by Python & AJAX</p>
+
+        <form id="scanForm" class="mb-8">
+            <label for="target" class="block text-sm font-medium text-gray-700 mb-2">Target IP / Domain:</label>
+            <div class="flex gap-4">
+                <input type="text" id="target" name="target" placeholder="e.g., 127.0.0.1 or scanme.nmap.org" required
+                    class="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 font-mono">
+                <button type="submit" id="scanBtn"
+                    class="bg-blue-600 text-white px-8 py-3 rounded-md hover:bg-blue-700 font-semibold transition duration-200">
+                    Start Scan
+                </button>
+                <button type="button" id="stopBtn"
+                    class="hidden bg-red-600 text-white px-8 py-3 rounded-md hover:bg-red-700 font-semibold transition duration-200">
+                    Stop Scan
+                </button>
+            </div>
+            <div class="mt-4 bg-gray-50 p-4 border border-gray-200 rounded-md">
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">Scan Configuration</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="scanProfile" class="block text-xs font-medium text-gray-600 mb-1">Scan Profile</label>
+                        <select id="scanProfile" name="scanProfile" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="default">Default Scan (1000 ports)</option>
+                            <option value="quick">Quick Scan (100 ports)</option>
+                            <option value="intense">Intense Scan (-A)</option>
+                            <option value="custom">Custom Port Range...</option>
+                        </select>
+                    </div>
+
+                    <div id="customPortDiv" class="hidden">
+                        <label for="customPorts" class="block text-xs font-medium text-gray-600 mb-1">Specify Ports (e.g., 22,80,443 or 1-500)</label>
+                        <input type="text" id="customPorts" name="customPorts" placeholder="e.g., 80,443"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 font-mono">
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-col md:flex-row gap-4">
+                    <label class="flex items-center space-x-2 text-sm text-gray-700 cursor-pointer">
+                        <input type="checkbox" id="stealthMode" class="rounded text-blue-600 focus:ring-blue-500">
+                        <span>🛡️ Stealth Mode (Bypass IDS / Fragment Packets)</span>
+                    </label>
+                    
+                    <label class="flex items-center space-x-2 text-sm text-gray-700 cursor-pointer">
+                        <input type="checkbox" id="vulnMode" class="rounded text-blue-600 focus:ring-blue-500">
+                        <span>🐛 Vuln Scripts </span>
+                    </label>
+                </div>
+            </div>
+        </form>
+
+        <div id="loadingSection" class="hidden mb-8 p-4 bg-blue-50 border border-blue-100 rounded-md">
+            <div class="flex justify-between items-center mb-2">
+                <p class="text-sm font-semibold text-blue-800" id="statusText">Initiating Nmap Engine...</p>
+                <p id="progressText" class="text-sm font-bold text-blue-800">0%</p>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div id="progressBar" class="bg-blue-600 h-3 rounded-full transition-all duration-300 ease-out" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div id="resultsSection" class="hidden mt-8">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Scan Results</h2>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200 rounded-md">
+                    <thead class="bg-gray-800 text-white">
+                        <tr>
+                            <th class="py-3 px-4 text-left text-sm font-semibold">Port</th>
+                            <th class="py-3 px-4 text-left text-sm font-semibold">State</th>
+                            <th class="py-3 px-4 text-left text-sm font-semibold">Service</th>
+                            <th class="py-3 px-4 text-left text-sm font-semibold">Version</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+      document.getElementById('scanProfile').addEventListener('change', function(e) {
+        const customDiv = document.getElementById('customPortDiv');
+        if (e.target.value === 'custom') {
+          customDiv.classList.remove('hidden');
+        } else {
+          customDiv.classList.add('hidden');
+        }
+      });
+      document.getElementById('scanForm').addEventListener('submit', async function(e) {
+        e.preventDefault(); //halang page dari reload
+
+        const targetInput = document.getElementById('target').value;
+        const scanBtn = document.getElementById('scanBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const loadingSection = document.getElementById('loadingSection');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsBody = document.getElementById('resultsBody');
+
+        // 1. kunci UI masa tengah scan
+        scanBtn.disabled = true;
+        scanBtn.classList.add('hidden');
+
+        stopBtn.innerText = 'Stop Scan';
+        stopBtn.disabled = false;
+        stopBtn.classList.remove('opacity-50');
+        stopBtn.classList.remove('hidden');
+
+        //nak hide result lama (kalau ada) dan tunjuk loading
+        resultsSection.classList.add('hidden');
+        loadingSection.classList.remove('hidden');
+        document.getElementById('progressBar').style.width = '0%';
+        document.getElementById('progressText').innerText = '0%';
+        document.getElementById('statusText').innerText = "Running Nmap Scan on " + targetInput + "...";
+        resultsBody.innerHTML = ''; //kosongkan jadual lama
+
+        // 2. hantar arahan ke backend untuk start scan (POST)
+        const formData = new FormData();
+        formData.append('target', targetInput);
+        formData.append('scanProfile', document.getElementById('scanProfile').value);
+        formData.append('customPorts', document.getElementById('customPorts').value);
+        formData.append('stealthMode', document.getElementById('stealthMode').checked);
+        formData.append('vulnMode', document.getElementById('vulnMode').checked);
+
+        await fetch('/scan', {method: 'POST', body: formData});
+
+        // 3. mula tanya server status setiap 1 saat (Polling)
+        const interval = setInterval(async () => {
+          try {
+            const response = await fetch('/progress');
+            const data = await response.json();
+
+            //kemaskini UI progress bar
+            document.getElementById('progressBar').style.width = data.progress + '%';
+            document.getElementById('progressText').innerText = data.progress + '%';
+
+            //kalau siap
+            if (data.status === 'completed' || data.status === 'cancelled') {
+              clearInterval(interval); //nak stopkan polling
+              loadingSection.classList.add('hidden'); //sembunyi loading
+
+              //buka balik button supaya boleh scan ip lain
+              stopBtn.classList.add('hidden');
+              scanBtn.classList.remove('hidden');
+              scanBtn.disabled = false;
+              scanBtn.innerText = 'Start New Scan';
+
+              if (data.status === 'cancelled') {
+                //kalau scan dibatalkan, tunjuk mesej
+                resultsBody.innerHTML = '<tr><td colspan="4" class="py-4 px-4 text-center text-red-500 font-semibold">Scan cancelled by user.</td></tr>';
+                resultsSection.classList.remove('hidden');
+              } else {
+                // 4. lukis table result
+                    if (data.results.length === 0){
+                        resultsBody.innerHTML = '<tr><td colspan="3" class="py-4 px-4 text-center text-gray-500">No open ports found or target is down.</td></tr>';
+                    } else {
+                        //loop data hasil dan buat baris html
+                        data.results.forEach(item => {
+                            const stateColor = item.state === 'open' ? 'text-green-600 font-bold' : 'text-red-600';
+                            const rowHtml = `
+                            <tr class="hover:bg-gray-50 border-b">
+                                <td class="py-3 px-4 text-sm text-gray-800 font-mono">${item.port}</td>
+                                <td class="py-3 px-4 text-sm uppercase ${stateColor}">${item.state}</td>
+                                <td class="py-3 px-4 text-sm text-gray-800">${item.service}</td>
+                                <td class="py-3 px-4 text-sm text-gray-800">${item.version || '-'}</td>
+                            </tr>
+                            `;
+                            resultsBody.innerHTML += rowHtml; //ni untuk tambah baris dalam jadual
+                            });
+                        }
+                        //tunjukkan jadual
+                        resultsSection.classList.remove('hidden');
+                    }
+              }
+
+              
+            } catch (error) {
+              console.error("Error fetching progress:", error);
+            }
+          }, 1000); // 1000 milisecond = 1 saat
+        });
+
+        document.getElementById('stopBtn').addEventListener('click', async function() {
+          this.innerText = 'Stopping...';
+          this.disabled = true;
+          this.classList.add('opacity-50');
+
+          //hantar arahan ke backend untuk stop scan
+          try {
+            await fetch('/stop', {method: 'POST'});
+        } catch (error) {
+              console.error("Error sending stop command:", error);
+        }
+          
+        });
+    </script>
+</body>
+</html>
