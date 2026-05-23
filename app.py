@@ -1,7 +1,9 @@
 import subprocess
 import re
 import threading
+import time
 from flask import Flask, render_template, request, jsonify
+from cve_test import cve_data
 
 app = Flask(__name__)
 
@@ -63,12 +65,48 @@ def nmap_worker(target, profile, custom_ports, stealth, vuln):
                 "port": f"{port_match.group(1)}/{port_match.group(2)}",
                 "state": port_match.group(3),
                 "service": port_match.group(4),
-                "version": port_match.group(5).strip()
+                "version": port_match.group(5).strip(),
+                "cve_data": []  # Placeholder untuk data CVE nanti
             })
 
-    if scan_data["status"] != "cancelled":  # Kalau scan tak dihentikan secara manual
+    if scan_data["status"] != "cancelled":  
+        print("\n[!] Nmap completed. Searching CVE from NVD...")
+
+        for result in scan_data["results"]:
+            if result["state"] == "open" and result["version"] and result["version"].strip() not in ["", "unknown", "-"]:
+                
+                # 1. Pecahkan string versi kepada senarai perkataan
+                user_input = result["version"].split()
+                product = user_input[0] if user_input else ""
+                
+                # 2. 🔥 AMBIL PERKATAAN KEDUA SAHAJA UNTUK VERSI (Buang sampah Ubuntu/Linux di belakang)
+                version = user_input[1] if len(user_input) > 1 else ""
+                
+                # 3. Logik khas: Kalau Nmap pulangkan format "Apache httpd 2.4.7", kita betulkan kedudukan
+                if product.lower() in ["apache", "httpd"] and "httpd" in result["version"].lower():
+                    product = "Apache"
+                    # Cari elemen dalam list yang ada titik dan bermula dengan nombor (cth: 2.4.7)
+                    for item in user_input:
+                        if "." in item and item[0].isdigit():
+                            version = item
+                            break
+
+                print(f"\n[!] Searching CVEs for -> Product: {product} | Version: {version}...")
+
+                # 4. Tembak API NVD guna parameter yang dah suci bersih (Ambil 10 teratas)
+                cve_results = cve_data(product, version)[:10]
+                result["cve_data"] = cve_results
+                
+                print(f"[DEBUG APP.PY] Hasil CVE untuk {product} {version}: {cve_results}")
+
+                time.sleep(2)  # Delay wajib untuk hormati NVD rate limit
+
+            else:
+                result["cve_data"] = []
+
         scan_data["progress"] = 100
         scan_data["status"] = "completed"
+        print("\n[!] CVE search completed.")
 
 @app.route('/')
 def index():

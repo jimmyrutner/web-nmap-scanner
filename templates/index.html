@@ -168,15 +168,48 @@
                         resultsBody.innerHTML = '<tr><td colspan="3" class="py-4 px-4 text-center text-gray-500">No open ports found or target is down.</td></tr>';
                     } else {
                         //loop data hasil dan buat baris html
-                        data.results.forEach(item => {
+                        data.results.forEach((item, index) => {
                             const stateColor = item.state === 'open' ? 'text-green-600 font-bold' : 'text-red-600';
+
+                            let cveButtonHtml = '';
+                            let cveDetailsHtml = '';
+                            
+                            if (item.cve_data && item.cve_data.length > 0){
+                                //buat button untuk tunjuk CVE details
+                                cveButtonHtml = `<br><button onclick="toggleCveDisplay(${index})" class="mt-1 text-xs bg-yellow-500 hover:bg-yellow-600 text-black px-2 py-0.5 rounded font-bold">⚠️ ${item.cve_data.length} CVE Found</button>`;
+
+                                //sedia block untuk tunjuk details CVE (hidden)
+                                let cveRows = '';
+                                item.cve_data.forEach(cve => {
+                                    cveRows += `
+                                        <div class="border-b pb-2 mb-2 last:border-none">
+                                            <span class="font-mono text-red-600 font-bold">${cve.cve_id}</span> 
+                                            <span class="ml-2 bg-red-100 text-red-800 text-xs px-1.5 py-0.5 rounded font-bold">Score: ${cve.score}</span>
+                                            <p class="text-xs text-gray-600 mt-1">${cve.description}</p>
+                                        </div>
+                                    `;
+                                });
+
+                                cveDetailsHtml = `
+                                    <tr id="cve-row-${index}" class="hidden bg-yellow-50">
+                                        <td colspan="4" class="p-4 border-b">
+                                            <div class="bg-white p-4 rounded shadow-inner max-h-60 overflow-y-auto">
+                                                <h4 class="font-bold text-sm text-gray-800 mb-3">Vulnerability Details untuk ${item.service} (${item.version}):</h4>
+                                                ${cveRows}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `;
+                            }
+
                             const rowHtml = `
                             <tr class="hover:bg-gray-50 border-b">
                                 <td class="py-3 px-4 text-sm text-gray-800 font-mono">${item.port}</td>
                                 <td class="py-3 px-4 text-sm uppercase ${stateColor}">${item.state}</td>
                                 <td class="py-3 px-4 text-sm text-gray-800">${item.service}</td>
-                                <td class="py-3 px-4 text-sm text-gray-800">${item.version || '-'}</td>
+                                <td class="py-3 px-4 text-sm text-gray-800">${item.version || '-'} ${cveButtonHtml}</td>
                             </tr>
+                            ${cveDetailsHtml}
                             `;
                             resultsBody.innerHTML += rowHtml; //ni untuk tambah baris dalam jadual
                             });
@@ -206,6 +239,12 @@
         }
           
         });
+        function toggleCveDisplay(index) {
+        const row = document.getElementById(`cve-row-${index}`);
+        if (row) {
+            row.classList.toggle('hidden');
+        }
+    }
     </script>
 </body>
 </html>
